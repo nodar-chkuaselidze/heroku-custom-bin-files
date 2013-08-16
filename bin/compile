@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir>
+
+# fail fast
+set -e
+
+# debug
+# set -x
+
+# clean up leaking environment
+unset GIT_DIR
+
+# parse and derive params
+BUILD_DIR=$1
+CACHE_DIR=$2
+LP_DIR=`cd $(dirname $0); cd ..; pwd`
+
+function error() {
+  echo " !     $*" >&2
+  exit 1
+}
+
+function mktmpdir() {
+  dir=$(mktemp -t node-$1-XXXX)
+  rm -rf $dir
+  mkdir -p $dir
+  echo $dir
+}
+
+function indent() {
+  c='s/^/       /'
+  case $(uname) in
+    Darwin) sed -l "$c";;
+    *)      sed -u "$c";;
+  esac
+}
+
+### UNZIP functions START ###
+function sourceforge_download() {
+  from="$1"
+  location="$2"
+
+  mkdir -p $location
+  curl $from -s -L -o - | tar xzf - -C $location
+}
+
+function build_unzip() {
+  bdir="$1"
+
+  cd "$bdir"
+  cp "$bdir/unix/Makefile" "$bdir"
+  make generic
+}
+
+### UNZIP functions END ###
+
+echo "-----> Buildpack by Nodari Chkuaselidze - nodar.chkuaselidze@gmail.com"
+echo "for snapslide" | indent
+
+# Sources
+UNZIP_SOURCE="http://sourceforge.net/projects/infozip/files/UnZip%206.x%20%28latest%29/UnZip%206.0/unzip60.tar.gz/download"
+
+# vendor directories
+VENDORED_UNZIP="$(mktmpdir unzip)"
+
+PATH="$BUILD_DIR/bin:$PATH"
+mkdir -p "$BUILD_DIR/bin"
+
+#if CACHE_DIR does not exists create it
+if [ ! -d "$CACHE_DIR" ];then
+  mkdir -p "$CACHE_DIR"
+fi
+
+### UNZIP process START ###
+UNZIP_BUILD_PATH="${BUILD_DIR}/bin/unzip"
+UNZIP_CACHE_PATH="${CACHE_DIR}/bin/unzip"
+echo "-----> Processing UNZIP..."
+mkdir -p $(dirname $UNZIP_CACHE_PATH)
+if [ ! -f "${UNZIP_CACHE_PATH}" ];then
+  echo "unzip cache file does not exist, download and compile" | indent
+  echo "-----> Downloading UNZIP..."
+  sourceforge_download "${UNZIP_SOURCE}" "${VENDORED_UNZIP}"
+  echo "-----> Building UNZIP..."
+  build_unzip "${VENDORED_UNZIP}/unzip60"
+  echo "-----> Vendoring UNZIP into slug"
+  cp "${VENDORED_UNZIP}/unzip60/unzip" "${UNZIP_BUILD_PATH}"
+  echo "-----> Creating Cache of UNZIP"
+  cp "${UNZIP_BUILD_PATH}" "${UNZIP_CACHE_PATH}"
+else
+  echo "unzip cache file exists, just copying" | indent
+  cp "${UNZIP_CACHE_PATH}" "${UNZIP_BUILD_PATH}"
+fi
+echo `$UNZIP_BUILD_PATH -v | head -n 1` | indent
+### UNZIP process END ###
+
